@@ -9,7 +9,7 @@
 
 ---
 ## 📸 Demo
-![Demo](./assets/showcase.gif)
+![Demo](assets/showcase.gif)
 
 ---
 ## ✨ 核心功能特色
