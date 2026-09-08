@@ -7,6 +7,11 @@ An efficient quiz practice and mistake management system built with Vue 3 + Elem
 ![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat&logo=python&logoColor=white)
 ![Vue.js](https://img.shields.io/badge/Vue.js-3.x-4FC08D?style=flat&logo=vuedotjs&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
+---
+## 📸 Demo
+<img width="1628" height="954" alt="image" src="https://github.com/user-attachments/assets/65412de2-e839-41fe-9511-9be5ad4cd845" />
+
+
 ## ✨ Features
 
 - **📄 PDF Question Bank Parsing**: Upload PDF question banks with real-time log tracking for parsing and importing progress.
