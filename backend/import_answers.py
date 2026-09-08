@@ -1,5 +1,8 @@
+import csv
+import os
 import database as db
 
+CSV_FILE_PATH = ""
 
 ANSWER_DATA = """
 847 A
@@ -166,32 +169,60 @@ def import_answers():
     session = db.SessionLocal()
 
     try:
-        # 解析题号和答案
         answer_map = {}
 
+        # -------------------------------------------------------------
+        # 1. 从 CSV 文件中读取 1 - 846 范围内的题号和答案
+        # -------------------------------------------------------------
+        csv_count = 0
+        if os.path.exists(CSV_FILE_PATH):
+            print(f"📖 正在读取 CSV 文件: {CSV_FILE_PATH}")
+            with open(CSV_FILE_PATH, mode="r", encoding="utf-8-sig") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    q_num_str = str(row.get("q_num", "")).strip()
+                    answer_str = str(row.get("real_answer", "")).strip().upper()
+
+                    # 转成整数校验 1-846 范围
+                    if q_num_str.isdigit():
+                        q_num_int = int(q_num_str)
+                        if 1 <= q_num_int <= 846 and answer_str:
+                            answer_map[str(q_num_int)] = answer_str
+                            csv_count += 1
+            print(f"✅ 从 CSV 中提取到 1-846 范围内的题目答案共 {csv_count} 条")
+        else:
+            print(f"⚠️ 未找到 CSV 文件: {CSV_FILE_PATH}，将跳过 CSV 导入。")
+
+        # -------------------------------------------------------------
+        # 2. 从 ANSWER_DATA 文本中补充 847 - 1417 范围内的答案
+        # -------------------------------------------------------------
+        text_count = 0
         for line in ANSWER_DATA.strip().splitlines():
-
             parts = line.strip().split()
-
             if len(parts) != 2:
                 continue
 
-            q_num, answer = parts
+            q_num_str, answer_str = parts
+            q_num_str = q_num_str.strip()
+            answer_str = answer_str.strip().upper()
 
-            q_num = str(q_num).strip()
-            answer = str(answer).strip().upper()
+            if q_num_str.isdigit():
+                q_num_int = int(q_num_str)
+                if 847 <= q_num_int <= 1417 and answer_str:
+                    answer_map[str(q_num_int)] = answer_str
+                    text_count += 1
 
-            if q_num and answer:
-                answer_map[q_num] = answer
-
-        print(f"准备导入 {len(answer_map)} 道题目的正确答案...")
+        print(f"✅ 从文本中提取到 847-1417 范围内的补充答案共 {text_count} 条")
+        print(f"📊 准备将总计 {len(answer_map)} 道题目的答案更新至数据库...")
         print("-" * 50)
 
+        # -------------------------------------------------------------
+        # 3. 更新至数据库
+        # -------------------------------------------------------------
         updated = []
         not_found = []
 
         for q_num, answer in answer_map.items():
-
             question = (
                 session.query(db.Question)
                 .filter_by(q_num=q_num)
@@ -203,41 +234,30 @@ def import_answers():
                 continue
 
             question.real_answer = answer
-
-            updated.append(
-                f"{q_num} -> {answer}"
-            )
+            updated.append(f"{q_num} -> {answer}")
 
         session.commit()
 
-        print()
-        print("✅ 正确答案导入完成！")
+        print("\n✅ 正确答案导入完成！")
         print("=" * 50)
-
-        print(f"输入答案数量：{len(answer_map)}")
-        print(f"成功更新：{len(updated)}")
-        print(f"题库中未找到：{len(not_found)}")
+        print(f"总处理数量：{len(answer_map)}")
+        print(f"成功更新数量：{len(updated)}")
+        print(f"数据库未匹配到：{len(not_found)}")
 
         if not_found:
-            print()
-            print("⚠️ 以下题号在题库中没有找到：")
+            print("\n⚠️ 以下题号在数据库 Question 表中没有找到：")
             print(", ".join(not_found))
 
-        print()
-        print("部分导入结果：")
-
+        print("\n部分更新日志 (前20条)：")
         for item in updated[:20]:
             print(f"  {item}")
 
         if len(updated) > 20:
-            print(f"  ... 其余 {len(updated) - 20} 道已成功更新")
+            print(f"  ... 其余 {len(updated) - 20} 道题目已更新完成")
 
     except Exception as e:
-
         session.rollback()
-
-        print()
-        print("❌ 导入失败：")
+        print("\n❌ 导入失败：")
         print(str(e))
 
     finally:
