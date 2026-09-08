@@ -9,8 +9,7 @@ An efficient quiz practice and mistake management system built with Vue 3 + Elem
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
 ---
 ## 📸 Demo
-<img width="1628" height="954" alt="image" src="https://github.com/user-attachments/assets/65412de2-e839-41fe-9511-9be5ad4cd845" />
-
+![Demo](assets/showcase.gif)
 
 ## ✨ Features
 

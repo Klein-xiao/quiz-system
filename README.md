@@ -9,7 +9,7 @@
 
 ---
 ## 📸 Demo
-<img width="1628" height="954" alt="image" src="https://github.com/user-attachments/assets/65412de2-e839-41fe-9511-9be5ad4cd845" />
+![Demo](assets/showcase.gif)
 
 ---
 ## ✨ 核心功能特色
