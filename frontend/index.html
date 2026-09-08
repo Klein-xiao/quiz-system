@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>📝 智能刷题与错题集系统</title>
+  <link rel="stylesheet" href="https://unpkg.com/element-plus@2.3.8/dist/index.css">
+  <script src="https://unpkg.com/vue@3.3.4/dist/vue.global.js"></script>
+  <script src="https://unpkg.com/element-plus@2.3.8/dist/index.full.js"></script>
+  <script src="https://unpkg.com/axios@1.4.0/dist/axios.min.js"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: #f5f7fa; margin: 0; padding: 20px; }
+    .card { max-width: 980px; margin: 0 auto; }
+    .q-box { background: #fff; padding: 18px; border-radius: 8px; margin-bottom: 16px; border: 1px solid #e4e7ed; box-shadow: 0 2px 8px rgba(0,0,0,0.03); }
+    .q-content { white-space: pre-wrap; word-break: break-all; font-size: 15px; line-height: 1.6; color: #303133; margin: 12px 0; }
+    .log-area { background: #1e1e1e; color: #00ff66; padding: 12px; border-radius: 6px; font-family: monospace; height: 180px; overflow-y: auto; margin-top: 15px; font-size: 13px; }
+    .pagination-bar { background: #fff; padding: 15px; border-radius: 8px; margin-top: 15px; display: flex; justify-content: center; }
+    .ans-tag { margin-left: 10px; font-weight: bold; }
+    .option-bar { margin-top: 10px; background: #f8f9fa; padding: 10px 14px; border-radius: 6px; display: flex; align-items: center; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <el-container class="card">
+      <el-header style="display: flex; justify-content: space-between; align-items: center; background: #fff; padding: 15px 20px; border-radius: 8px; height: auto;">
+        <div>
+          <h2 style="margin: 0; font-size: 20px; color: #303133;">📝 智能刷题系统</h2>
+        </div>
+        <div>
+          <!-- 上传正确答案 -->
+          <el-button type="success" @click="triggerAnsInput">✅ 上传正确答案表</el-button>
+          <input type="file" ref="ansInput" @change="uploadAnswers" style="display: none;" accept=".xlsx, .xls, .csv" />
+
+          <!-- 批量导入错题按钮 -->
+          <el-button type="warning" @click="openBatchDialog" style="margin-left: 8px;">📋 批量错题</el-button>
+
+          <!-- 上传 PDF 题库 -->
+          <el-button type="primary" @click="triggerFileInput" style="margin-left: 8px;">📤 上传 PDF 题库</el-button>
+          <input type="file" ref="fileInput" @change="uploadPDF" style="display: none;" accept=".pdf" />
+
+          <!-- 清空数据 -->
+          <el-popconfirm title="确定要清空所有数据吗？" @confirm="clearAllData">
+            <template #reference>
+              <el-button type="danger" text style="margin-left: 8px;">清空</el-button>
+            </template>
+          </el-popconfirm>
+        </div>
+      </el-header>
+
+      <el-main style="padding-top: 20px;">
+        <el-tabs v-model="activeTab" @tab-change="handleTabChange" type="border-card">
+
+          <!-- 1. 全量刷题区 -->
+          <el-tab-pane label="全量刷题" name="all">
+            <div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
+              <span>共 <b>{{ questions.length }}</b> 道题 (第 {{ currentPage }} / {{ totalPages }} 页)</span>
+              <el-switch v-model="showRealAnswers" active-text="显示正确答案与对错比对" />
+            </div>
+
+            <el-empty v-if="questions.length === 0" description="暂无题目，请上传 PDF 题库"></el-empty>
+
+            <div v-for="item in pagedQuestions" :key="item.id" class="q-box">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                  <el-tag type="info" effect="dark">题号 #{{ item.q_num }}</el-tag>
+                  <el-tag v-if="isMultipleChoice(item.real_answer)" type="warning" size="small" style="margin-left: 8px;">多选题</el-tag>
+                  <el-tag v-else type="primary" size="small" style="margin-left: 8px;">单选题</el-tag>
+
+                  <template v-if="showRealAnswers && item.real_answer">
+                    <el-tag type="success" class="ans-tag">正确答案: {{ cleanAnswer(item.real_answer) }}</el-tag>
+                    <el-tag v-if="hasUserAnswer(item.id)" :type="checkAnswer(item.id, item.real_answer) ? 'success' : 'danger'" class="ans-tag">
+                      {{ checkAnswer(item.id, item.real_answer) ? '✓ 回答正确' : '✕ 回答错误' }}
+                    </el-tag>
+                  </template>
+                </div>
+                <el-button type="danger" size="small" text @click="markWrong(item.id)">加入错题本</el-button>
+              </div>
+
+              <div class="q-content">{{ item.content }}</div>
+
+              <!-- 选项交互区：根据正确答案自动切换为单选/多选 -->
+              <div class="option-bar">
+                <span style="font-size: 13px; color: #909399; margin-right: 12px;">我的选择：</span>
+
+                <!-- 多选模式 -->
+                <el-checkbox-group v-if="isMultipleChoice(item.real_answer)" v-model="userAnswers[item.id]">
+                  <el-checkbox-button label="A">A</el-checkbox-button>
+                  <el-checkbox-button label="B">B</el-checkbox-button>
+                  <el-checkbox-button label="C">C</el-checkbox-button>
+                  <el-checkbox-button label="D">D</el-checkbox-button>
+                  <el-checkbox-button label="E">E</el-checkbox-button>
+                  <el-checkbox-button label="F">F</el-checkbox-button>
+                </el-checkbox-group>
+
+                <!-- 单选模式 -->
+                <el-radio-group v-else v-model="userAnswers[item.id]">
+                  <el-radio-button label="A">A</el-radio-button>
+                  <el-radio-button label="B">B</el-radio-button>
+                  <el-radio-button label="C">C</el-radio-button>
+                  <el-radio-button label="D">D</el-radio-button>
+                </el-radio-group>
+              </div>
+            </div>
+
+            <div class="pagination-bar" v-if="questions.length > 0">
+              <el-pagination
+                v-model:current-page="currentPage"
+                :page-size="pageSize"
+                layout="prev, pager, next, jumper, total"
+                :total="questions.length"
+                @current-change="scrollToTop"
+              />
+            </div>
+          </el-tab-pane>
+
+          <!-- 2. 错题特训集 -->
+          <el-tab-pane label="错题特训集" name="wrong">
+            <div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
+              <span>共 <b>{{ wrongQuestions.length }}</b> 道错题 (第 {{ currentWrongPage }} / {{ totalWrongPages }} 页)</span>
+              <el-switch v-model="showWrongRealAnswers" active-text="显示正确答案与对错比对" />
+            </div>
+
+            <el-empty v-if="wrongQuestions.length === 0" description="太棒了，目前没有错题！"></el-empty>
+
+            <div v-for="item in pagedWrongQuestions" :key="item.id" class="q-box">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                  <el-tag type="danger">错题 #{{ item.q_num }}</el-tag>
+                  <el-tag v-if="isMultipleChoice(item.real_answer)" type="warning" size="small" style="margin-left: 8px;">多选题</el-tag>
+                  <el-tag v-else type="primary" size="small" style="margin-left: 8px;">单选题</el-tag>
+
+                  <!-- 显示正确答案与判断结果 -->
+                  <template v-if="showWrongRealAnswers || showWrongAnswers[item.id]">
+                    <el-tag type="success" class="ans-tag">正确答案: {{ cleanAnswer(item.real_answer) || '未录入' }}</el-tag>
+                    <el-tag v-if="hasUserAnswer(item.id)" :type="checkAnswer(item.id, item.real_answer) ? 'success' : 'danger'" class="ans-tag">
+                      {{ checkAnswer(item.id, item.real_answer) ? '✓ 回答正确' : '✕ 回答错误' }}
+                    </el-tag>
+                    <el-button v-if="!showWrongRealAnswers" type="info" size="small" text @click="toggleWrongAnswer(item.id)" style="margin-left: 8px;">隐藏答案</el-button>
+                  </template>
+                  <template v-else>
+                    <el-button type="primary" size="small" plain @click="toggleWrongAnswer(item.id)" style="margin-left: 10px;">👁️ 查看答案</el-button>
+                  </template>
+                </div>
+
+                <el-tag type="warning">累计做错 {{ item.wrong_count }} 次</el-tag>
+              </div>
+
+              <div class="q-content">{{ item.content }}</div>
+
+              <div style="margin-top: 10px; display: flex; justify-content: space-between; align-items: center;">
+                <!-- 多选模式 -->
+                <el-checkbox-group v-if="isMultipleChoice(item.real_answer)" v-model="userAnswers[item.id]">
+                  <el-checkbox-button label="A">A</el-checkbox-button>
+                  <el-checkbox-button label="B">B</el-checkbox-button>
+                  <el-checkbox-button label="C">C</el-checkbox-button>
+                  <el-checkbox-button label="D">D</el-checkbox-button>
+                  <el-checkbox-button label="E">E</el-checkbox-button>
+                  <el-checkbox-button label="F">F</el-checkbox-button>
+                </el-checkbox-group>
+
+                <!-- 单选模式 -->
+                <el-radio-group v-else v-model="userAnswers[item.id]">
+                  <el-radio-button label="A">A</el-radio-button>
+                  <el-radio-button label="B">B</el-radio-button>
+                  <el-radio-button label="C">C</el-radio-button>
+                  <el-radio-button label="D">D</el-radio-button>
+                </el-radio-group>
+
+                <el-button type="success" size="small" @click="masterQuestion(item.id)">标记为已掌握</el-button>
+              </div>
+            </div>
+
+            <!-- 错题集分页器 -->
+            <div class="pagination-bar" v-if="wrongQuestions.length > 0">
+              <el-pagination
+                v-model:current-page="currentWrongPage"
+                :page-size="pageSize"
+                layout="prev, pager, next, jumper, total"
+                :total="wrongQuestions.length"
+                @current-change="scrollToTop"
+              />
+            </div>
+          </el-tab-pane>
+        </el-tabs>
+      </el-main>
+    </el-container>
+
+    <!-- 题库解析进度弹窗 -->
+    <el-dialog v-model="uploadProgressVisible" title="📄 题库解析与导入进度" width="550px" :close-on-click-modal="false" :show-close="false">
+      <el-progress :percentage="uploadPercent" :status="uploadStatus" :stroke-width="18" striped striped-flow />
+      <div class="log-area" ref="logBox">
+        <div v-for="(log, idx) in logs" :key="idx">> {{ log }}</div>
+      </div>
+      <div style="margin-top: 15px; text-align: right;">
+        <el-button type="primary" :disabled="uploadPercent < 100" @click="uploadProgressVisible = false">完成</el-button>
+      </div>
+    </dialog>
+
+    <!-- 批量导入错题弹窗 -->
+    <el-dialog v-model="batchDialogVisible" title="📋 批量导入错题清单" width="500px">
+      <p style="font-size: 13px; color: #606266; margin-bottom: 8px;">
+        请输入错题序号（可以用逗号、空格或换行隔开）：
+      </p>
+
+      <el-input
+        v-model="batchInputText"
+        type="textarea"
+        :rows="8"
+        placeholder="例如：&#10;847&#10;848&#10;849&#10;853"
+      />
+
+      <div style="margin-top: 20px; display: flex; justify-content: flex-end; gap: 10px;">
+        <el-button @click="batchDialogVisible = false">取消</el-button>
+        <el-button type="warning" :loading="batchSubmitting" @click="submitBatchWrong">
+          确认导入并形成错题集
+        </el-button>
+      </div>
+    </dialog>
+  </div>
+
+  <script>
+    const { createApp, ref, reactive, computed, onMounted, nextTick } = Vue;
+
+    const app = createApp({
+      setup() {
+        const activeTab = ref('all');
+        const questions = ref([]);
+        const wrongQuestions = ref([]);
+        const userAnswers = reactive({});
+        const showRealAnswers = ref(true);
+
+        const showWrongRealAnswers = ref(false);
+        const showWrongAnswers = reactive({});
+
+        const toggleWrongAnswer = (id) => {
+          showWrongAnswers[id] = !showWrongAnswers[id];
+        };
+
+        // 清理并标准化正确答案（例如去除空格、转大写、按字母排序）
+        const cleanAnswer = (ans) => {
+          if (!ans) return '';
+          return ans.toString().toUpperCase().replace(/[^A-Z]/g, '').split('').sort().join('');
+        };
+
+        // 判断是否为多选题（清洗后字母个数 > 1 视为多选）
+        const isMultipleChoice = (realAns) => {
+          const cleaned = cleanAnswer(realAns);
+          return cleaned.length > 1;
+        };
+
+        // 初始化用户答案数据格式（多选初始化为数组 []，单选初始化为字符串 ''）
+        const initAnswersData = (qList) => {
+          qList.forEach(item => {
+            if (!(item.id in userAnswers)) {
+              if (isMultipleChoice(item.real_answer)) {
+                userAnswers[item.id] = [];
+              } else {
+                userAnswers[item.id] = '';
+              }
+            }
+          });
+        };
+
+        // 判断用户是否已作答
+        const hasUserAnswer = (id) => {
+          const ans = userAnswers[id];
+          if (Array.isArray(ans)) {
+            return ans.length > 0;
+          }
+          return !!ans;
+        };
+
+        // 检查用户回答是否完全正确
+        const checkAnswer = (id, realAns) => {
+          const userAns = userAnswers[id];
+          const targetAns = cleanAnswer(realAns);
+
+          if (Array.isArray(userAns)) {
+            // 多选：将选中的选项按字母排序组合后比对
+            const sortedUser = [...userAns].sort().join('');
+            return sortedUser === targetAns;
+          } else {
+            // 单选直接比对
+            return (userAns || '').toUpperCase() === targetAns;
+          }
+        };
+
+        // 分页控制 (每页 60 题)
+        const currentPage = ref(1);
+        const currentWrongPage = ref(1);
+        const pageSize = ref(60);
+
+        const totalPages = computed(() => Math.ceil(questions.value.length / pageSize.value) || 1);
+        const totalWrongPages = computed(() => Math.ceil(wrongQuestions.value.length / pageSize.value) || 1);
+
+        const pagedQuestions = computed(() => {
+          const start = (currentPage.value - 1) * pageSize.value;
+          return questions.value.slice(start, start + pageSize.value);
+        });
+
+        const pagedWrongQuestions = computed(() => {
+          const start = (currentWrongPage.value - 1) * pageSize.value;
+          return wrongQuestions.value.slice(start, start + pageSize.value);
+        });
+
+        const scrollToTop = () => {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        };
+
+        const fileInput = ref(null);
+        const ansInput = ref(null);
+
+        const uploadProgressVisible = ref(false);
+        const uploadPercent = ref(0);
+        const uploadStatus = ref('');
+        const logs = ref([]);
+        const logBox = ref(null);
+
+        const batchDialogVisible = ref(false);
+        const batchInputText = ref('');
+        const batchSubmitting = ref(false);
+
+        const openBatchDialog = () => {
+          batchDialogVisible.value = true;
+        };
+
+        const loadData = () => {
+          if (activeTab.value === 'all') {
+            axios.get('http://127.0.0.1:8000/api/questions').then(res => {
+              questions.value = res.data;
+              initAnswersData(res.data);
+            });
+          } else {
+            axios.get('http://127.0.0.1:8000/api/wrong-questions').then(res => {
+              wrongQuestions.value = res.data;
+              initAnswersData(res.data);
+            });
+          }
+        };
+
+        const handleTabChange = () => {
+          currentPage.value = 1;
+          currentWrongPage.value = 1;
+          loadData();
+        };
+
+        const triggerFileInput = () => fileInput.value.click();
+        const triggerAnsInput = () => ansInput.value.click();
+
+        const uploadAnswers = (e) => {
+          const file = e.target.files[0];
+          if (!file) return;
+
+          const formData = new FormData();
+          formData.append('file', file);
+
+          axios.post('http://127.0.0.1:8000/api/upload-answers', formData).then(res => {
+            ElementPlus.ElMessage.success(res.data.message);
+            loadData();
+          }).catch(err => {
+            ElementPlus.ElMessage.error(err.response?.data?.detail || '解析失败');
+          }).finally(() => {
+            ansInput.value.value = '';
+          });
+        };
+
+        const uploadPDF = async (e) => {
+          const file = e.target.files[0];
+          if (!file) return;
+
+          uploadProgressVisible.value = true;
+          uploadPercent.value = 0;
+          uploadStatus.value = '';
+          logs.value = [];
+
+          const formData = new FormData();
+          formData.append('file', file);
+
+          try {
+            const response = await fetch('http://127.0.0.1:8000/api/upload-pdf-progress?clear_old=true', {
+              method: 'POST',
+              body: formData
+            });
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+
+            while (true) {
+              const { value, done } = await reader.read();
+              if (done) break;
+
+              const chunk = decoder.decode(value);
+              const lines = chunk.split('\n\n');
+
+              for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                  const data = JSON.parse(line.replace('data: ', ''));
+                  uploadPercent.value = data.percent;
+                  logs.value.push(data.message);
+
+                  if (data.status === 'completed') {
+                    uploadStatus.value = 'success';
+                    currentPage.value = 1;
+                    loadData();
+                  }
+
+                  nextTick(() => {
+                    if (logBox.value) logBox.value.scrollTop = logBox.value.scrollHeight;
+                  });
+                }
+              }
+            }
+          } catch (err) {
+            uploadStatus.value = 'exception';
+            logs.value.push('❌ 上传解析过程出现错误');
+          } finally {
+            fileInput.value.value = '';
+          }
+        };
+
+        const submitBatchWrong = () => {
+          if (!batchInputText.value.trim()) {
+            ElementPlus.ElMessage.warning('请输入题号后再提交');
+            return;
+          }
+
+          const qNums = batchInputText.value.split(/[,，;\s\n]+/).filter(Boolean);
+
+          if (qNums.length === 0) {
+            ElementPlus.ElMessage.warning('未检测到有效的题号');
+            return;
+          }
+
+          batchSubmitting.value = true;
+
+          axios.post('http://127.0.0.1:8000/api/mark-wrong-batch', { q_nums: qNums })
+            .then(res => {
+              ElementPlus.ElMessage.success(res.data.message || '导入成功！');
+              batchDialogVisible.value = false;
+              batchInputText.value = '';
+              activeTab.value = 'wrong';
+              currentWrongPage.value = 1;
+              loadData();
+            })
+            .catch(err => {
+              ElementPlus.ElMessage.error(err.response?.data?.detail || '导入失败，请检查题号或后端服务');
+            })
+            .finally(() => {
+              batchSubmitting.value = false;
+            });
+        };
+
+        const markWrong = (id) => {
+          axios.post(`http://127.0.0.1:8000/api/mark-wrong/${id}`).then(() => {
+            ElementPlus.ElMessage.warning('已加入错题集！');
+          });
+        };
+
+        const masterQuestion = (id) => {
+          axios.post(`http://127.0.0.1:8000/api/master-question/${id}`).then(() => {
+            ElementPlus.ElMessage.success('已移出错题本！');
+            loadData();
+          });
+        };
+
+        const clearAllData = () => {
+          axios.post('http://127.0.0.1:8000/api/clear-all').then(res => {
+            ElementPlus.ElMessage.success(res.data.message);
+            loadData();
+          });
+        };
+
+        onMounted(loadData);
+
+        return {
+          activeTab, questions, wrongQuestions, userAnswers, showRealAnswers,
+          showWrongRealAnswers, showWrongAnswers, toggleWrongAnswer,
+          cleanAnswer, isMultipleChoice, hasUserAnswer, checkAnswer,
+          currentPage, currentWrongPage, pageSize, totalPages, totalWrongPages,
+          pagedQuestions, pagedWrongQuestions, scrollToTop, handleTabChange,
+          fileInput, ansInput, triggerFileInput, triggerAnsInput, uploadAnswers, uploadPDF,
+          uploadProgressVisible, uploadPercent, uploadStatus, logs, logBox,
+          batchDialogVisible, batchInputText, batchSubmitting, openBatchDialog, submitBatchWrong,
+          markWrong, masterQuestion, clearAllData
+        };
+      }
+    });
+
+    app.use(ElementPlus);
+    app.mount('#app');
+  </script>
+</body>
+</html>
