@@ -2,6 +2,7 @@
 # 📝 智能刷题与错题集系统 (Quiz & Mistake Note System)
 
 一个基于 Vue 3 + Element Plus 前端与 Python 后端构建的高效刷题与错题管理系统。支持 PDF 题库解析导入、Excel/CSV 答案匹配、单选/多选题自动识别比对，以及错题集专项特训。
+---
 ![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat&logo=python&logoColor=white)
 ![Vue.js](https://img.shields.io/badge/Vue.js-3.x-4FC08D?style=flat&logo=vuedotjs&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
